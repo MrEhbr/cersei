@@ -701,6 +701,7 @@ pub async fn run_agent_streaming(
 
                 // Phase 3: Process results sequentially (emit events, build result blocks)
                 let mut result_blocks: Vec<ContentBlock> = Vec::new();
+                let mut post_hook_injections: Vec<Message> = Vec::new();
 
                 for (tool_id, tool_name, tool_input, mut result, duration) in results {
                     // ── Guard: Read-before-edit ──
@@ -755,6 +756,32 @@ pub async fn run_agent_streaming(
                         duration,
                     });
 
+                    let post_ctx = HookContext {
+                        event: HookEvent::PostToolUse,
+                        tool_name: Some(tool_name.clone()),
+                        tool_input: Some(tool_input.clone()),
+                        tool_result: Some(result.content.clone()),
+                        tool_is_error: Some(result.is_error),
+                        turn,
+                        cumulative_cost_usd: cumulative.cost_usd.unwrap_or(0.0),
+                        message_count: agent.messages.lock().len(),
+                    };
+                    match cersei_hooks::run_hooks(&agent.hooks, &post_ctx).await {
+                        HookAction::Continue => {}
+                        // Buffer until after the tool_result user message is pushed,
+                        // otherwise the injection would split the tool_use/tool_result pair.
+                        HookAction::InjectMessage(msg) => post_hook_injections.push(msg),
+                        HookAction::Block(reason) => tracing::warn!(
+                            tool = %tool_name,
+                            reason = %reason,
+                            "PostToolUse hook returned Block; ignored (post-hoc)",
+                        ),
+                        HookAction::ModifyInput(_) => tracing::warn!(
+                            tool = %tool_name,
+                            "PostToolUse hook returned ModifyInput; ignored (post-hoc)",
+                        ),
+                    }
+
                     let capped_content = if result.is_error {
                         result.content.clone()
                     } else {
@@ -783,11 +810,16 @@ pub async fn run_agent_streaming(
                     });
                 }
 
-                // Add tool results as user message
-                agent
-                    .messages
-                    .lock()
-                    .push(Message::user_blocks(result_blocks));
+                // Add tool results as user message, then flush any PostToolUse injections
+                // so they land *after* the tool_result pairing (API requires tool_use to be
+                // immediately answered by a user message of tool_result blocks).
+                {
+                    let mut msgs = agent.messages.lock();
+                    msgs.push(Message::user_blocks(result_blocks));
+                    for m in post_hook_injections.drain(..) {
+                        msgs.push(m);
+                    }
+                }
 
                 // ── Doom loop detection ──
                 // Detects two patterns:
