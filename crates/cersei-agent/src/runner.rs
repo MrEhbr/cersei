@@ -246,32 +246,10 @@ pub async fn run_agent_streaming(
             options.set("thinking_budget", budget);
         }
 
-        // Todo nudge: on turns > 2, remind model about incomplete todos
-        let system_with_nudge = if turn > 2 {
-            let session_id = agent.session_id.as_deref().unwrap_or("default");
-            let todos = cersei_tools::todo_write::get_todos(session_id);
-            let incomplete = todos
-                .iter()
-                .filter(|t| t.status != cersei_tools::todo_write::TodoStatus::Completed)
-                .count();
-            if incomplete > 0 {
-                let nudge = format!(
-                    "\n\n[system reminder: You have {} incomplete task{} in your TodoWrite list. Make sure to complete all tasks before ending your response. Use tools to make progress on each task.]",
-                    incomplete,
-                    if incomplete == 1 { "" } else { "s" }
-                );
-                agent.system_prompt.as_ref().map(|s| format!("{s}{nudge}"))
-            } else {
-                agent.system_prompt.clone()
-            }
-        } else {
-            agent.system_prompt.clone()
-        };
-
         let request = CompletionRequest {
             model: model.clone(),
             messages: messages.clone(),
-            system: system_with_nudge,
+            system: agent.system_prompt.clone(),
             tools: tool_defs,
             max_tokens: agent.max_tokens,
             temperature: agent.temperature,
