@@ -211,13 +211,9 @@ pub async fn run_agent_streaming(
     let mut benchmark_retries: u32 = 0;
     const BENCHMARK_MAX_RETRIES: u32 = 4;
     let mut doom_loop_warned = false;
-    let mut completion_verified = false;
 
     // Runtime guards
     let mut files_read: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut tool_error_counts: std::collections::HashMap<String, u32> =
-        std::collections::HashMap::new();
-    const MAX_TOOL_ERRORS_PER_TOOL: u32 = 3;
 
     // Build tool context
     let tool_ctx = ToolContext {
@@ -474,40 +470,6 @@ pub async fn run_agent_streaming(
         // Handle stop reason
         match &response.stop_reason {
             StopReason::EndTurn => {
-                // ── Completion verification nudge ──
-                // If agent is finishing but hasn't verified its output, nudge once.
-                if agent.benchmark_mode && !completion_verified && turn >= 3 {
-                    let recent_has_verify = tool_calls.iter().rev().take(5).any(|tc| {
-                        let cmd = tc
-                            .input
-                            .get("command")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        cmd.contains("cat ")
-                            || cmd.contains("python ")
-                            || cmd.contains("test")
-                            || cmd.contains("verify")
-                            || cmd.contains("node ")
-                            || cmd.contains("./")
-                            || cmd.contains("check")
-                    });
-                    if !recent_has_verify {
-                        completion_verified = true;
-                        agent.messages.lock().push(Message::user(
-                            "[system] Before finishing, verify your solution is correct:\n\
-                             1. Check that all expected output files exist and have correct content\n\
-                             2. Run your solution to confirm it produces the right output\n\
-                             3. Re-read the original instruction — did you satisfy EVERY requirement?"
-                        ));
-                        let _ = event_tx
-                            .send(AgentEvent::Status(
-                                "Nudging agent to verify before completion".into(),
-                            ))
-                            .await;
-                        continue;
-                    }
-                }
-
                 // ── Benchmark self-verification ──
                 // In TB 2.0 tests are run externally by the verifier AFTER the agent
                 // finishes. We only intervene if:
@@ -711,19 +673,6 @@ pub async fn run_agent_streaming(
                                 }
                             }
                         }
-                    }
-
-                    // ── Guard: Per-tool error counter with reflection ──
-                    if result.is_error {
-                        let count = tool_error_counts.entry(tool_name.clone()).or_insert(0);
-                        *count += 1;
-                        let remaining = MAX_TOOL_ERRORS_PER_TOOL.saturating_sub(*count);
-                        result.content = format!(
-                            "{}\n\n[Tool '{}' failed {} time(s). {} attempts remaining. Analyze the error and try a different approach.]",
-                            result.content, tool_name, count, remaining
-                        );
-                    } else {
-                        tool_error_counts.remove(&tool_name);
                     }
 
                     let _ = event_tx
