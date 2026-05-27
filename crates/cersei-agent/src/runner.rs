@@ -208,8 +208,6 @@ pub async fn run_agent_streaming(
     let mut _last_usage = Usage::default();
     let mut max_tokens_retries: u32 = 0;
     const MAX_TOKENS_RETRY_LIMIT: u32 = 3;
-    let mut had_tool_use = false;
-    let mut depth_nudge_sent = false;
     let mut benchmark_retries: u32 = 0;
     const BENCHMARK_MAX_RETRIES: u32 = 4;
     let mut doom_loop_warned = false;
@@ -579,21 +577,10 @@ pub async fn run_agent_streaming(
                     // The external verifier will run tests after.
                 }
 
-                // Depth nudge: if we had tool calls but ended very early (turn <= 3),
-                // push the model to explore deeper before giving final answer.
-                // This prevents shallow 1-round analysis. Only nudge once.
-                if had_tool_use && turn <= 4 && !depth_nudge_sent {
-                    depth_nudge_sent = true;
-                    agent.messages.lock().push(Message::user(
-                        "[system] Your analysis is not deep enough yet. You MUST read actual source code files before writing a summary. Use Read to examine at least 8-10 source files (stores, components, commands, types, configs). Use parallel Read calls. Do NOT write the final output until you have read enough source files to provide specific details about implementations, not just file names."
-                    ));
-                    continue; // Don't break — force another round
-                }
                 break;
             }
             StopReason::ToolUse => {
                 max_tokens_retries = 0;
-                had_tool_use = true;
                 // Process tool calls
                 let tool_use_blocks: Vec<(String, String, serde_json::Value)> = response
                     .message
