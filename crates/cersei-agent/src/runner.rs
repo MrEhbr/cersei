@@ -205,7 +205,6 @@ pub async fn run_agent_streaming(
     let mut tool_calls: Vec<ToolCallRecord> = Vec::new();
     let mut turn: u32 = 0;
     let mut last_stop_reason = StopReason::EndTurn;
-    let mut _last_usage = Usage::default();
     let mut max_tokens_retries: u32 = 0;
     const MAX_TOKENS_RETRY_LIMIT: u32 = 3;
     let mut benchmark_retries: u32 = 0;
@@ -391,7 +390,6 @@ pub async fn run_agent_streaming(
         // Convert accumulated response
         let response = accumulator.into_response()?;
         last_stop_reason = response.stop_reason.clone();
-        _last_usage = response.usage.clone();
 
         // Update cumulative usage
         agent.cumulative_usage.lock().merge(&response.usage);
