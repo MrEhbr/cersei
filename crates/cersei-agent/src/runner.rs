@@ -781,12 +781,16 @@ pub async fn run_agent_streaming(
                         && errors[1]
                         && errors[2];
 
-                    // Pattern 2: [A,B][A,B][A,B] alternating pattern
+                    // Pattern 2: [A,B][A,B][A,B] alternating pattern, mostly failing.
+                    // Without the error gate, healthy iterative work like
+                    // Read,Edit,Read,Edit,Read,Edit across files would trip this.
+                    let pattern_2_errors = errors.iter().filter(|&&e| e).count();
                     let is_2_pattern = names.len() >= 6
                         && names[0] == names[2]
                         && names[2] == names[4]
                         && names[1] == names[3]
-                        && names[3] == names[5];
+                        && names[3] == names[5]
+                        && pattern_2_errors >= 3;
 
                     if is_3_identical || is_2_pattern {
                         doom_loop_warned = true;
