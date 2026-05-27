@@ -60,7 +60,8 @@ pub fn build_cli_system_prompt(
         extra_cached.push((
             "project_intel".to_string(),
             format!(
-                "Project structure (top {} files by importance — symbols and imports extracted via tree-sitter):\n{}",
+                "Project structure (top {} files by importance — symbols and imports extracted via tree-sitter). \
+                 When exploring this codebase, prefer Read calls on the highest-ranked entries and batch them in parallel.\n{}",
                 project_intel.len(),
                 intel_summary
             ),

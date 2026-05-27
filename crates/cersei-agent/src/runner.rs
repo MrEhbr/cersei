@@ -183,24 +183,7 @@ pub async fn run_agent_streaming(
         }
     } // end session load guard
 
-    // Add user prompt (with exploration hint for analysis tasks)
-    let is_analysis = prompt.contains("index")
-        || prompt.contains("analyze")
-        || prompt.contains("explore")
-        || prompt.contains("understand")
-        || prompt.contains("tell me about")
-        || prompt.contains("summary");
-
-    let expanded_prompt = if is_analysis {
-        format!(
-            "{}\n\n[system hint: The project_intel section in your context shows the most important files ranked by dependency graph analysis (tree-sitter). Use parallel Read calls to read those files — entry points, stores, commands, and type files listed there. Read at least 10 files before writing output. Focus on files with the most symbols and imports.]",
-            prompt
-        )
-    } else {
-        prompt.to_string()
-    };
-
-    agent.messages.lock().push(Message::user(&expanded_prompt));
+    agent.messages.lock().push(Message::user(prompt));
 
     let mut tool_calls: Vec<ToolCallRecord> = Vec::new();
     let mut turn: u32 = 0;
