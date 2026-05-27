@@ -324,7 +324,7 @@ pub async fn run_agent_streaming(
                 Err(e) if e.is_retryable() && retry_count < MAX_RETRIES => {
                     retry_count += 1;
                     let delay_ms = (1000 * 2u64.pow(retry_count - 1)).min(30_000); // 1s, 2s, 4s, 8s, 16s
-                    let jitter = (delay_ms / 4) as u64;
+                    let jitter = delay_ms / 4;
                     let actual_delay = delay_ms + (rand_jitter() % jitter.max(1));
                     tracing::warn!(
                         "Provider error (retryable, attempt {}/{}): {}. Retrying in {}ms...",
@@ -445,7 +445,7 @@ pub async fn run_agent_streaming(
         // Fire TurnsElapsed every `turns_elapsed_cadence` turns (default 10).
         // Callers can register a SkillNudgeHook here for agent-curated skill
         // creation without blocking the agent loop.
-        if turn > 0 && turn % agent.turns_elapsed_cadence == 0 {
+        if turn > 0 && turn.is_multiple_of(agent.turns_elapsed_cadence) {
             let cadence_ctx = HookContext {
                 event: HookEvent::TurnsElapsed,
                 tool_name: None,
@@ -555,7 +555,7 @@ pub async fn run_agent_streaming(
                                 benchmark_retries += 1;
                                 let truncated: String = test_output.chars().take(3000).collect();
                                 agent.messages.lock().push(Message::user(
-                                    &format!(
+                                    format!(
                                         "[system] Verification FAILED (attempt {}/{}).\n\n\
                                          Output:\n```\n{}\n```\n\n\
                                          Try a COMPLETELY DIFFERENT approach. Do NOT patch — rewrite.",
