@@ -74,6 +74,9 @@ pub enum HookAction {
     ModifyInput(Value),
     /// Inject a message into the conversation.
     InjectMessage(Message),
+    /// Terminate the agentic loop gracefully (PostModelTurn / PostToolUse).
+    /// Unlike `Block`, this ends the run with a normal output rather than an error.
+    Stop(String),
 }
 
 // ─── Shell hook (compat with cc-core HookEntry) ──────────────────────────────

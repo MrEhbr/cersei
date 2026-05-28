@@ -387,12 +387,19 @@ pub async fn run_agent_streaming(
             cumulative_cost_usd: cumulative.cost_usd.unwrap_or(0.0),
             message_count: agent.messages.lock().len(),
         };
-        let hook_action = cersei_hooks::run_hooks(&agent.hooks, &hook_ctx).await;
-        if let HookAction::Block(reason) = hook_action {
-            return Err(CerseiError::Provider(format!(
-                "Blocked by hook: {}",
-                reason
-            )));
+        match cersei_hooks::run_hooks(&agent.hooks, &hook_ctx).await {
+            HookAction::Block(reason) => {
+                return Err(CerseiError::Provider(format!("Blocked by hook: {}", reason)));
+            }
+            HookAction::Stop(reason) => {
+                let _ = event_tx
+                    .send(AgentEvent::Status(format!("Stopped by hook: {reason}")))
+                    .await;
+                agent.emit(AgentEvent::Status(format!("Stopped by hook: {reason}")));
+                last_stop_reason = StopReason::EndTurn;
+                break;
+            }
+            _ => {}
         }
 
         // Fire TurnsElapsed every `turns_elapsed_cadence` turns (default 10).
@@ -502,6 +509,7 @@ pub async fn run_agent_streaming(
             }
             StopReason::ToolUse => {
                 max_tokens_retries = 0;
+                let mut should_stop: Option<String> = None;
                 // Process tool calls
                 let tool_use_blocks: Vec<(String, String, serde_json::Value)> = response
                     .message
@@ -634,6 +642,10 @@ pub async fn run_agent_streaming(
                         }
                     }
 
+                    if result.stop_loop {
+                        should_stop = Some(format!("Stopped by tool: {tool_name}"));
+                    }
+
                     let _ = event_tx
                         .send(AgentEvent::ToolEnd {
                             name: tool_name.clone(),
@@ -666,6 +678,9 @@ pub async fn run_agent_streaming(
                         // Buffer until after the tool_result user message is pushed,
                         // otherwise the injection would split the tool_use/tool_result pair.
                         HookAction::InjectMessage(msg) => post_hook_injections.push(msg),
+                        HookAction::Stop(reason) => {
+                            should_stop = Some(format!("Stopped by hook: {reason}"));
+                        }
                         HookAction::Block(reason) => tracing::warn!(
                             tool = %tool_name,
                             reason = %reason,
@@ -769,6 +784,13 @@ pub async fn run_agent_streaming(
                             ))
                             .await;
                     }
+                }
+
+                if let Some(reason) = should_stop {
+                    let _ = event_tx.send(AgentEvent::Status(reason.clone())).await;
+                    agent.emit(AgentEvent::Status(reason));
+                    last_stop_reason = StopReason::EndTurn;
+                    break;
                 }
             }
             StopReason::MaxTokens => {

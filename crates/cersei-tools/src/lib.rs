@@ -122,6 +122,8 @@ pub struct ToolResult {
     pub content: String,
     pub is_error: bool,
     pub metadata: Option<Value>,
+    /// When true, the agent loop terminates gracefully after recording this result.
+    pub stop_loop: bool,
 }
 
 impl ToolResult {
@@ -130,6 +132,7 @@ impl ToolResult {
             content: content.into(),
             is_error: false,
             metadata: None,
+            stop_loop: false,
         }
     }
 
@@ -138,6 +141,17 @@ impl ToolResult {
             content: content.into(),
             is_error: true,
             metadata: None,
+            stop_loop: false,
+        }
+    }
+
+    /// A successful result that also ends the agent loop after it is recorded.
+    pub fn stop(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            is_error: false,
+            metadata: None,
+            stop_loop: true,
         }
     }
 
